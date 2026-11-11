@@ -1,0 +1,63 @@
+import numpy as np
+
+
+POP_SZ, GENS, MUT_R, CROSS_R = 40, 50, 0.15, 0.8
+BNDS = np.array([(0.0, 50.0), (0.0, 20.0), (0.0, 10.0)])
+DT, T_MAX, TARGET, J, B, K = 0.01, 5.0, 1.0, 0.5, 0.1, 0.2
+
+
+def evaluate(ind):
+    kp, ki, kd = ind
+    pos, vel, i_err, p_err, cost = 0.0, 0.0, 0.0, 0.0, 0.0
+    for t_idx in range(int(T_MAX / DT)):
+        err = TARGET - pos
+        i_err += err * DT
+        u = (kp * err) + (ki * i_err) + (kd * (err - p_err) / DT)
+        p_err = err
+        
+        vel += ((u - B * vel - K * pos) / J) * DT
+        pos += vel * DT
+        cost += (t_idx * DT) * abs(err) * DT
+        if abs(pos) > 10.0: return 0.0  # Returns 0 fitness for instability
+    return 1.0 / (cost + 1e-4)
+
+
+def select(pop, fits):
+    idx = np.random.choice(len(pop), 3, replace=False)
+    return pop[idx[np.argmax(fits[idx])]].copy()
+
+def crossover_mutate(p1, p2):
+    if np.random.rand() < CROSS_R:
+        diff = abs(p1 - p2)
+        c = np.random.uniform(np.minimum(p1, p2) - 0.5 * diff, np.maximum(p1, p2) + 0.5 * diff)
+    else:
+        c = p1.copy()
+    
+    # Vectorized Gaussian Mutation & Clipping
+    mask = np.random.rand(3) < MUT_R
+    c[mask] += np.random.normal(0, (BNDS[:, 1] - BNDS[:, 0]) * 0.1)[mask]
+    return np.clip(c, BNDS[:, 0], BNDS[:, 1])
+
+
+def run_ga():
+    pop = np.random.uniform(BNDS[:, 0], BNDS[:, 1], (POP_SZ, 3))
+    best_ind, best_fit = None, -1.0
+
+    for gen in range(GENS):
+        fits = np.array([evaluate(ind) for ind in pop])
+        if fits.max() > best_fit:
+            best_fit, best_ind = fits.max(), pop[fits.argmax()].copy()
+        
+       
+        nxt_pop = [pop[fits.argmax()].copy(), best_ind.copy()]
+        while len(nxt_pop) < POP_SZ:
+            nxt_pop.append(crossover_mutate(select(pop, fits), select(pop, fits)))
+            
+        pop = np.array(nxt_pop[:POP_SZ])
+        if (gen + 1) % 10 == 0 or gen == 0:
+            print(f"Gen {gen+1:02d}: Best Cost (ITAE) = {((1.0 / best_fit) - 1e-4):.4f}")
+
+    print(f"\nOptimal Kp, Ki, Kd: {best_ind}\nMinimized Cost (ITAE): {((1.0 / best_fit) - 1e-4):.4f}")
+
+if __name__ == "__main__":
+    run_ga()
