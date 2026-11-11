@@ -1,0 +1,147 @@
+import numpy as np
+
+class TradingStructureACO:
+    def __init__(self, cost_matrix, num_ants=10, alpha=1.0, beta=2.0, rho=0.1, Q=1.0, iterations=100):
+        """
+        Ant Colony Optimization adapted for Trading-Structure Optimization.
+        
+        :param cost_matrix: 2D array representing transaction drag/slippage/costs between asset structural nodes
+        :param num_ants: Number of ants exploring the asset structure per iteration
+        :param alpha: Relative importance of the pheromone trail (historical structural strength)
+        :param beta: Relative importance of heuristic information (immediate spread/cost benefit)
+        :param rho: Pheromone evaporation rate
+        :param Q: Pheromone deposition constant
+        :param iterations: Total analysis cycles
+        """
+        self.cost_matrix = np.array(cost_matrix)
+        self.num_assets = len(cost_matrix)
+        self.num_ants = num_ants
+        self.alpha = alpha
+        self.beta = beta
+        self.rho = rho
+        self.Q = Q
+        self.iterations = iterations
+        
+  
+        self.pheromones = np.ones((self.num_assets, self.num_assets))
+        
+        with np.errstate(divide='ignore'):
+            self.heuristic = 1.0 / self.cost_matrix
+            self.heuristic[np.isinf(self.heuristic)] = 0.0
+
+    def run(self):
+        best_structure = None
+        best_cost = float('inf')
+        
+        for iteration in range(self.iterations):
+            all_paths = []
+            all_costs = []
+            
+            for ant in range(self.num_ants):
+                path = self._construct_solution()
+                cost = self._calculate_path_cost(path)
+                
+                all_paths.append(path)
+                all_costs.append(cost)
+                
+           
+                if cost < best_cost:
+                    best_cost = cost
+                    best_structure = path
+            
+            
+            self._update_pheromones(all_paths, all_costs)
+            
+        return best_structure, best_cost
+
+    def _construct_solution(self):
+     
+        start_asset = np.random.randint(self.num_assets)
+        path = [start_asset]
+        visited = set(path)
+        
+        while len(path) < self.num_assets:
+            current_asset = path[-1]
+            probabilities = self._calculate_transition_probabilities(current_asset, visited)
+            
+        
+            next_asset = np.random.choice(self.num_assets, p=probabilities)
+            path.append(next_asset)
+            visited.add(next_asset)
+            
+        return path
+
+    def _calculate_transition_probabilities(self, current, visited):
+    
+        pheromone_factor = self.pheromones[current] ** self.alpha
+        heuristic_factor = self.heuristic[current] ** self.beta
+        scores = pheromone_factor * heuristic_factor
+
+        mask = np.ones(self.num_assets, dtype=bool)
+        mask[list(visited)] = False
+        scores[~mask] = 0.0
+        
+        total_score = np.sum(scores)
+        if total_score == 0:
+          
+            probabilities = np.zeros(self.num_assets)
+            probabilities[mask] = 1.0 / np.sum(mask)
+            return probabilities
+            
+        return scores / total_score
+
+    def _calculate_path_cost(self, path):
+        
+        total_cost = 0.0
+        for i in range(len(path)):
+            from_asset = path[i]
+            to_asset = path[(i + 1) % len(path)]
+            total_cost += self.cost_matrix[from_asset, to_asset]
+        return total_cost
+
+    def _update_pheromones(self, all_paths, all_costs):
+
+        self.pheromones *= (1.0 - self.rho)
+        
+        
+        for path, cost in zip(all_paths, all_costs):
+            if cost > 0:
+                pheromone_to_deposit = self.Q / cost
+                for i in range(len(path)):
+                    from_asset = path[i]
+                    to_asset = path[(i + 1) % len(path)]
+                    self.pheromones[from_asset, to_asset] += pheromone_to_deposit
+
+
+if __name__ == "__main__":
+  
+    assets = ["BTC", "ETH", "SOL", "USDC", "EUR"]
+    
+   
+    inf = 9999.0
+    trading_costs = [
+        [inf, 5.0, 12.0, 2.0, 8.0],  
+        [4.0, inf, 10.0, 3.0, 7.0], 
+        [15.0, 11.0, inf, 4.0, 14.0], 
+        [1.5, 2.5, 3.5, inf, 1.0],   
+        [7.0, 6.5, 13.0, 1.2, inf]  
+    ]
+    
+  
+    aco_trader = TradingStructureACO(
+        cost_matrix=trading_costs, 
+        num_ants=15, 
+        alpha=1.0, 
+        beta=2.5, 
+        rho=0.15, 
+        iterations=50
+    )
+    
+    best_path, min_drag = aco_trader.run()
+    
+
+    readable_path = [assets[idx] for idx in best_path] + [assets[best_path[0]]]
+    
+    print("--- Optimal Trading Structure Found ---")
+    print(f"Optimal Routing Sequence: {' -> '.join(readable_path)}")
+    print(f"Total Portfolio Structural Drag / Cost: {min_drag:.2f} bps")
